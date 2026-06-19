@@ -49,6 +49,7 @@ app/
   schemas.py   # контракты + JSON-схема для модели
   prompt.py    # системный промпт
   llm.py       # клиент Ollama Cloud
+  ratelimit.py # rate-limiting публичного endpoint'а
 static/index.html   # фронтенд целиком
 tests/test_api.py   # тесты (LLM замокан, без сети)
 ```
