@@ -4,7 +4,7 @@
 
 **🌐 Живое демо:** **https://ai-research-interviewer.duckdns.org** — открыть и попробовать. Развёрнуто на VPS за Caddy (автоматический HTTPS), endpoint защищён rate-limiting'ом.
 
-![Превью интерфейса](docs/preview.png)
+![Демонстрация работы](docs/demo.gif)
 
 **Стек:** FastAPI (Python) · один HTML-файл с ванильным JS · LLM через [Ollama Cloud](https://ollama.com).
 
