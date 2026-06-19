@@ -20,10 +20,12 @@ _global_hits: deque = deque()
 
 
 def _client_ip(request: Request) -> str:
-    # За nginx настоящий адрес клиента — в X-Forwarded-For (берём первый).
+    # За одним доверенным reverse-proxy (Caddy) реальный адрес клиента — ПОСЛЕДНИЙ
+    # в X-Forwarded-For: его дописывает сам Caddy. Первые значения клиент может
+    # подделать, поэтому берём последний — спуфингом заголовка его не обойти.
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
-        return forwarded.split(",")[0].strip()
+        return forwarded.split(",")[-1].strip()
     return request.client.host if request.client else "unknown"
 
 

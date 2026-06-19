@@ -125,6 +125,25 @@ def test_rate_limit_returns_429(monkeypatch):
     assert 429 in codes[5:]        # дальше срабатывает лимит
 
 
+def test_rate_limit_uses_last_forwarded_ip_not_spoofable(monkeypatch):
+    async def fake(answer, history):
+        return AskResponse(decision="clarify", reply="?")
+
+    monkeypatch.setattr("app.main.ask_llm", fake)
+
+    # Клиент подделывает ПЕРВЫЙ X-Forwarded-For (разный каждый раз), но реальный
+    # (последний, дописанный Caddy) одинаков → лимит группирует по нему, спуфинг не помогает.
+    codes = [
+        client.post(
+            "/api/ask",
+            json={"answer": "x"},
+            headers={"X-Forwarded-For": f"{i}.0.0.1, 203.0.113.7"},
+        ).status_code
+        for i in range(7)
+    ]
+    assert 429 in codes
+
+
 # --- Прямое покрытие клиента ask_llm (без сети, через httpx-моки) ---
 
 def test_ask_llm_parses_clean_response(monkeypatch):
