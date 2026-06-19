@@ -114,6 +114,17 @@ def test_oversized_history_rejected():
     assert response.status_code == 422
 
 
+def test_rate_limit_returns_429(monkeypatch):
+    async def fake(answer, history):
+        return AskResponse(decision="clarify", reply="?")
+
+    monkeypatch.setattr("app.main.ask_llm", fake)
+
+    codes = [client.post("/api/ask", json={"answer": "ответ"}).status_code for _ in range(7)]
+    assert codes[:5] == [200] * 5  # первые 5 проходят
+    assert 429 in codes[5:]        # дальше срабатывает лимит
+
+
 # --- Прямое покрытие клиента ask_llm (без сети, через httpx-моки) ---
 
 def test_ask_llm_parses_clean_response(monkeypatch):
