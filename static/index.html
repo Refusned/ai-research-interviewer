@@ -320,12 +320,12 @@
 
     let history = [];      // [{role, content}] — диалог до текущего ответа
     let finished = false;  // интервью завершено
-    let pending = null;     // {answer, history} последнего запроса — для «Повторить»
+    let inFlight = false;  // запрос в полёте — защита от повторной отправки
     let thinkingEl = null;
 
     function updateCounter() {
       counter.textContent = `${answerEl.value.length} / 1000`;
-      sendBtn.disabled = answerEl.value.trim().length === 0 || finished;
+      sendBtn.disabled = inFlight || finished || answerEl.value.trim().length === 0;
     }
 
     function addTurn(role, content, decision) {
@@ -351,6 +351,7 @@
 
       feed.appendChild(turn);
       turn.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      return turn;
     }
 
     function showThinking() {
@@ -373,13 +374,13 @@
       doneNote.classList.remove("hidden");
     }
 
-    async function send(answer, priorHistory) {
-      pending = { answer, history: priorHistory };
-      errorBox.classList.add("hidden");
+    async function send(answer, userTurn) {
+      inFlight = true;
       answerEl.disabled = true;
       sendBtn.disabled = true;
       showThinking();
 
+      const priorHistory = history.slice();
       try {
         const res = await fetch("/api/ask", {
           method: "POST",
@@ -389,7 +390,7 @@
 
         if (!res.ok) {
           let detail = "Не удалось связаться с исследователем. Попробуйте ещё раз.";
-          try { const data = await res.json(); if (data.detail) detail = data.detail; } catch (_) {}
+          try { const body = await res.json(); if (body.detail) detail = body.detail; } catch (_) {}
           throw new Error(detail);
         }
 
@@ -405,29 +406,36 @@
         if (data.decision === "complete" || !ENABLE_MULTITURN) {
           finish();
         } else {
-          answerEl.disabled = false;
           answerEl.value = "";
-          updateCounter();
+          answerEl.disabled = false;
           answerEl.focus();
         }
       } catch (err) {
+        // Отправка не удалась — убираем неотправленный пузырь, возвращаем текст в поле.
         hideThinking();
+        if (userTurn) userTurn.remove();
+        answerEl.value = answer;
+        answerEl.disabled = false;
         errorText.textContent = err.message;
         errorBox.classList.remove("hidden");
-        answerEl.disabled = false;
+        answerEl.focus();
+      } finally {
+        inFlight = false;
         updateCounter();
       }
     }
 
     function submit() {
+      if (inFlight || finished) return;
       const text = answerEl.value.trim();
-      if (!text || finished) return;
-      addTurn("user", text);
-      send(text, history.slice());
+      if (!text) return;
+      errorBox.classList.add("hidden");
+      const userTurn = addTurn("user", text);
+      send(text, userTurn);
     }
 
     sendBtn.addEventListener("click", submit);
-    retryBtn.addEventListener("click", () => { if (pending) send(pending.answer, pending.history); });
+    retryBtn.addEventListener("click", submit);  // текст возвращён в поле — повтор = обычная отправка
     answerEl.addEventListener("input", updateCounter);
     answerEl.addEventListener("keydown", (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); submit(); }

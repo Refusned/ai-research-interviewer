@@ -31,7 +31,6 @@ docker run -e OLLAMA_API_KEY=ваш_ключ -e OLLAMA_MODEL=deepseek-v3.2 -p 80
 | `OLLAMA_API_KEY` | Ключ Ollama Cloud (обязательно) | — |
 | `OLLAMA_MODEL` | Тег модели | `deepseek-v3.2` |
 | `OLLAMA_BASE_URL` | Адрес API | `https://ollama.com` |
-| `HOST` / `PORT` | Адрес сервера | `127.0.0.1` / `8000` |
 
 Ключ создаётся на <https://ollama.com/settings/keys>. Список доступных моделей:
 

@@ -11,12 +11,12 @@ class Message(BaseModel):
     """Одна реплика диалога. Роли ограничены — подменить `system` нельзя."""
 
     role: Literal["user", "assistant"]
-    content: str
+    content: str = Field(..., max_length=4000)
 
 
 class AskRequest(BaseModel):
     answer: str = Field(..., min_length=1, max_length=4000)
-    history: list[Message] = Field(default_factory=list)
+    history: list[Message] = Field(default_factory=list, max_length=20)
 
     @field_validator("answer")
     @classmethod

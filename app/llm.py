@@ -25,28 +25,45 @@ def _build_messages(answer: str, history: list[Message]) -> list[dict]:
     return messages
 
 
+def _json_objects(content: str):
+    """Извлекает JSON-объекты из ответа модели — от строгого способа к мягкому.
+
+    Поле `format` обычно даёт чистый JSON, но не каждая облачная модель жёстко
+    его соблюдает: иногда JSON приходит обёрнутым в ```-блок или с текстом вокруг.
+    """
+    # 1) весь ответ — чистый JSON
+    try:
+        yield json.loads(content)
+    except json.JSONDecodeError:
+        pass
+    # 2) JSON внутри markdown-блока ```json ... ```
+    fence = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", content, re.S)
+    if fence:
+        try:
+            yield json.loads(fence.group(1))
+        except json.JSONDecodeError:
+            pass
+    # 3) первый валидный объект, начиная с первой `{` (текст вокруг игнорируется)
+    start = content.find("{")
+    if start != -1:
+        try:
+            obj, _ = json.JSONDecoder().raw_decode(content[start:])
+            yield obj
+        except json.JSONDecodeError:
+            pass
+
+
 def _parse(content: str) -> AskResponse:
     """Разбирает structured output модели.
 
-    Поле `format` обычно даёт чистый JSON, но не каждая облачная модель жёстко
-    его соблюдает: иногда JSON приходит обёрнутым в ```-блок или с текстом
-    вокруг. Поэтому пробуем несколько способов извлечь объект. Если всё мимо —
-    мягкий фоллбэк: показываем сырой текст как уточняющий вопрос (переспросить
-    безопаснее, чем ошибочно завершить интервью).
+    Если ни один способ не дал валидный объект нужной формы — мягкий фоллбэк:
+    показываем сырой текст как уточняющий вопрос (переспросить безопаснее,
+    чем ошибочно завершить интервью).
     """
-    candidates = [content]
-    fence = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", content, re.S)
-    if fence:
-        candidates.append(fence.group(1))
-    braces = re.search(r"\{.*\}", content, re.S)
-    if braces:
-        candidates.append(braces.group(0))
-
-    for candidate in candidates:
+    for data in _json_objects(content):
         try:
-            data = json.loads(candidate)
             return AskResponse(decision=data["decision"], reply=data["reply"])
-        except (json.JSONDecodeError, KeyError, ValueError, TypeError):
+        except (KeyError, ValueError, TypeError):
             continue
 
     logger.warning("Structured output не распознан, использую сырой текст")
@@ -80,7 +97,12 @@ async def ask_llm(answer: str, history: list[Message]) -> AskResponse:
     except httpx.HTTPError as exc:
         raise LLMError("Не удалось обратиться к модели") from exc
 
-    content = response.json().get("message", {}).get("content", "").strip()
+    try:
+        data = response.json()
+    except ValueError as exc:  # тело ответа оказалось не JSON
+        raise LLMError("Модель вернула некорректный ответ") from exc
+
+    content = data.get("message", {}).get("content", "").strip()
     if not content:
         raise LLMError("Модель вернула пустой ответ")
 

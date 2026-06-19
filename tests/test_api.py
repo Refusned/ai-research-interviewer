@@ -1,7 +1,12 @@
 """Тесты API. Реальных сетевых вызовов к Ollama нет — LLM замокан."""
 
+import asyncio
+
+import httpx
+import pytest
 from fastapi.testclient import TestClient
 
+from app import llm
 from app.llm import LLMError, _parse
 from app.main import app
 from app.schemas import AskResponse
@@ -67,6 +72,28 @@ def test_parse_json_with_surrounding_text():
     assert result.reply == "Спасибо за участие!"
 
 
+def test_parse_two_objects_uses_first():
+    result = _parse('{"decision": "clarify", "reply": "первый"} {"decision": "complete", "reply": "второй"}')
+    assert result.decision == "clarify"
+    assert result.reply == "первый"
+
+
+def test_parse_object_with_trailing_text():
+    result = _parse('{"decision": "complete", "reply": "готово"} и ещё какой-то текст }')
+    assert result.decision == "complete"
+    assert result.reply == "готово"
+
+
+def test_parse_invalid_enum_falls_back():
+    result = _parse('{"decision": "maybe", "reply": "x"}')
+    assert result.decision == "clarify"  # невалидный enum → фоллбэк
+
+
+def test_parse_missing_key_falls_back():
+    result = _parse('{"decision": "complete"}')
+    assert result.decision == "clarify"  # нет reply → фоллбэк
+
+
 def test_parse_fallback_on_non_json():
     result = _parse("Это просто текст, а не JSON")
     assert result.decision == "clarify"
@@ -79,3 +106,52 @@ def test_empty_answer_rejected():
 
 def test_blank_answer_rejected():
     assert client.post("/api/ask", json={"answer": "    "}).status_code == 422
+
+
+def test_oversized_history_rejected():
+    huge_history = [{"role": "user", "content": "x"}] * 21
+    response = client.post("/api/ask", json={"answer": "привет", "history": huge_history})
+    assert response.status_code == 422
+
+
+# --- Прямое покрытие клиента ask_llm (без сети, через httpx-моки) ---
+
+def test_ask_llm_parses_clean_response(monkeypatch):
+    async def fake_post(self, url, **kwargs):
+        return httpx.Response(
+            200,
+            json={"message": {"content": '{"decision": "complete", "reply": "Спасибо!"}'}},
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+    result = asyncio.run(llm.ask_llm("подробный ответ", []))
+    assert result.decision == "complete"
+    assert result.reply == "Спасибо!"
+
+
+def test_ask_llm_timeout_maps_to_llmerror(monkeypatch):
+    async def fake_post(self, *args, **kwargs):
+        raise httpx.TimeoutException("slow")
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+    with pytest.raises(LLMError):
+        asyncio.run(llm.ask_llm("ответ", []))
+
+
+def test_ask_llm_http_error_maps_to_llmerror(monkeypatch):
+    async def fake_post(self, url, **kwargs):
+        return httpx.Response(500, text="upstream boom", request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+    with pytest.raises(LLMError):
+        asyncio.run(llm.ask_llm("ответ", []))
+
+
+def test_ask_llm_empty_content_maps_to_llmerror(monkeypatch):
+    async def fake_post(self, url, **kwargs):
+        return httpx.Response(200, json={"message": {"content": "   "}}, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+    with pytest.raises(LLMError):
+        asyncio.run(llm.ask_llm("ответ", []))

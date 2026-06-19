@@ -1,0 +1,21 @@
+# Секреты — никогда не попадают в образ
+.env
+
+# Окружение и кэш
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# VCS и инструментальное
+.git/
+.gitignore
+.claude/
+.dockerignore
+
+# Не нужно в рантайме
+tests/
+docs/
+*.md
+Тестовое задание.md

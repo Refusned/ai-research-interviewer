@@ -17,9 +17,5 @@ class Settings(BaseSettings):
     ollama_base_url: str = "https://ollama.com"
     request_timeout: float = 60.0  # крупные облачные модели бывают неторопливы
 
-    # --- HTTP-сервер ---
-    host: str = "127.0.0.1"
-    port: int = 8000
-
 
 settings = Settings()  # type: ignore[call-arg]
